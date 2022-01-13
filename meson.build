@@ -1,6 +1,6 @@
 project('DFTTest', 'cpp',
   default_options: ['buildtype=release', 'b_ndebug=if-release', 'cpp_std=c++17'],
-  meson_version: '>=0.48.0',
+  meson_version: '>=0.51.0',
   version: '7'
 )
 
@@ -11,9 +11,17 @@ sources = [
   'DFTTest/DFTTest.h'
 ]
 
-vapoursynth_dep = dependency('vapoursynth').partial_dependency(compile_args: true, includes: true)
+gcc_syntax = cxx.get_argument_syntax() == 'gcc'
 
-fftw3f_dep = dependency('fftw3f')
+if gcc_syntax
+  vapoursynth_dep = dependency('vapoursynth').partial_dependency(compile_args: true, includes: true)
+  fftw3f_dep = dependency('fftw3f')
+  install_dir = vapoursynth_dep.get_variable(pkgconfig: 'libdir') / 'vapoursynth'
+else
+  vapoursynth_dep = []
+  fftw3f_dep = dependency('fftwf')
+  install_dir = get_option('libdir') / 'vapoursynth'
+endif
 
 deps = [vapoursynth_dep, fftw3f_dep]
 
@@ -31,7 +39,10 @@ endif
 libs = []
 
 if host_machine.cpu_family().startswith('x86')
-  add_project_arguments('-fno-math-errno', '-fno-trapping-math', '-DDFTTEST_X86', '-mfpmath=sse', '-msse2', language: 'cpp')
+  add_project_arguments('-DDFTTEST_X86', language: 'cpp')
+  if gcc_syntax
+    add_project_arguments('-fno-math-errno', '-fno-trapping-math', '-mfpmath=sse', '-msse2', language: 'cpp')
+  endif
 
   sources += [
     'DFTTest/DFTTest_SSE2.cpp',
@@ -60,13 +71,13 @@ if host_machine.cpu_family().startswith('x86')
 
   libs += static_library('avx2', 'DFTTest/DFTTest_AVX2.cpp',
     dependencies: deps,
-    cpp_args: ['-mavx2', '-mfma'],
+    cpp_args: gcc_syntax ? ['-mavx2', '-mfma'] : '/arch:AVX2',
     gnu_symbol_visibility: 'hidden'
   )
 
   libs += static_library('avx512', 'DFTTest/DFTTest_AVX512.cpp',
     dependencies: deps,
-    cpp_args: ['-mavx512f', '-mavx512vl', '-mavx512bw', '-mavx512dq', '-mfma'],
+    cpp_args: gcc_syntax ? ['-mavx512f', '-mavx512vl', '-mavx512bw', '-mavx512dq', '-mfma'] : '/arch:AVX512',
     gnu_symbol_visibility: 'hidden'
   )
 endif
@@ -75,6 +86,6 @@ shared_module('dfttest', sources,
   dependencies: deps,
   link_with: libs,
   install: true,
-  install_dir: join_paths(vapoursynth_dep.get_pkgconfig_variable('libdir'), 'vapoursynth'),
+  install_dir: install_dir,
   gnu_symbol_visibility: 'hidden'
 )
